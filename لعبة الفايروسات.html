@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لعبة الفيروسات - الصف الخامس</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&family=Changa:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Cairo', 'sans-serif'],
+                        cartoon: ['Changa', 'sans-serif'],
+                    },
+                    colors: {
+                        primary: '#4ade80', // Green
+                        secondary: '#60a5fa', // Blue
+                        accent: '#fbbf24', // Yellow
+                        danger: '#f87171', // Red
+                        background: '#f0fdfa', // Light cyan
+                    },
+                    animation: {
+                        'bounce-slow': 'bounce 3s infinite',
+                        'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #f0fdfa;
+            background-image: radial-gradient(#bae6fd 1px, transparent 1px), radial-gradient(#bae6fd 1px, transparent 1px);
+            background-size: 40px 40px;
+            background-position: 0 0, 20px 20px;
+        }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border-radius: 24px;
+            border: 4px solid #fff;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .btn-cartoon {
+            transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            box-shadow: 0 6px 0 rgba(0,0,0,0.2);
+        }
+        
+        .btn-cartoon:active {
+            transform: translateY(6px);
+            box-shadow: 0 0px 0 rgba(0,0,0,0.2);
+        }
+
+        .option-btn {
+            border: 3px solid transparent;
+            transition: all 0.3s ease;
+        }
+        
+        .option-btn:hover:not(:disabled) {
+            transform: scale(1.02);
+            border-color: #60a5fa;
+            background-color: #eff6ff;
+        }
+
+        .option-btn.correct {
+            background-color: #dcfce7;
+            border-color: #22c55e;
+            color: #166534;
+        }
+
+        .option-btn.wrong {
+            background-color: #fee2e2;
+            border-color: #ef4444;
+            color: #991b1b;
+        }
+
+        .character-img {
+            filter: drop-shadow(0 10px 15px rgba(0,0,0,0.2));
+            animation: float 4s ease-in-out infinite;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-15px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .feedback-modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 50;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .feedback-modal.active {
+            display: flex;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .drop-zone {
+            min-height: 50px;
+            border: 2px dashed #94a3b8;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #f8fafc;
+            margin: 0.5rem 0;
+            padding: 0.5rem;
+        }
+        .drag-item {
+            cursor: grab;
+        }
+        .drag-item:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 font-sans overflow-x-hidden flex flex-col relative">
+
+    <!-- Audio Elements (Using base64 embedded simple sounds or Tone.js for real web apps, but using placeholder functions here as per instructions to avoid external urls where possible, we'll synthesize simple sounds) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script>
+        let bgMusic;
+        let isMuted = false;
+
+        async function initAudio() {
+            await Tone.start();
+            
+            // Simple cheerful background synth
+            bgMusic = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.1, decay: 0.2, sustain: 0.2, release: 1 }
+            }).toDestination();
+            bgMusic.volume.value = -20; // quiet
+
+            // Play a simple sequence
+            const synthPart = new Tone.Sequence((time, note) => {
+                bgMusic.triggerAttackRelease(note, "8n", time);
+            }, ["C4", "E4", "G4", "E4", "F4", "A4", "C5", "A4"], "4n");
+            
+            Tone.Transport.bpm.value = 120;
+            synthPart.start(0);
+        }
+
+        function playSound(type) {
+            if(isMuted) return;
+            
+            const synth = new Tone.Synth().toDestination();
+            synth.volume.value = -10;
+            
+            if (type === 'correct') {
+                // Cheerful arpeggio
+                const now = Tone.now();
+                synth.triggerAttackRelease("C5", "8n", now);
+                synth.triggerAttackRelease("E5", "8n", now + 0.1);
+                synth.triggerAttackRelease("G5", "4n", now + 0.2);
+            } else if (type === 'wrong') {
+                // Low boop
+                synth.triggerAttackRelease("C3", "8n");
+            } else if (type === 'click') {
+                synth.triggerAttackRelease("G4", "16n");
+            }
+        }
+
+        function toggleMute() {
+            isMuted = !isMuted;
+            const icon = document.getElementById('muteIcon');
+            if (isMuted) {
+                Tone.Transport.stop();
+                icon.className = 'fas fa-volume-mute';
+            } else {
+                if(Tone.context.state !== 'running') Tone.start();
+                Tone.Transport.start();
+                icon.className = 'fas fa-volume-up';
+            }
+        }
+    </script>
+
+    <header class="p-4 flex justify-between items-center z-10 glass-panel m-4 rounded-full">
+        <div class="flex items-center gap-3">
+            <div class="w-12 h-12 bg-primary text-white rounded-full flex items-center justify-center font-bold text-xl shadow-lg border-2 border-white">
+                <i class="fas fa-microscope"></i>
+            </div>
+            <div>
+                <h1 class="font-cartoon text-2xl font-bold text-primary drop-shadow-sm">عالم الفيروسات</h1>
+                <p class="text-sm text-slate-500 font-bold">الصف الخامس - علوم</p>
+            </div>
+        </div>
+        <div class="flex gap-4">
+            <div class="bg-accent text-white px-4 py-2 rounded-full font-bold shadow-md border-2 border-white flex items-center gap-2">
+                <i class="fas fa-star text-yellow-100"></i> النقاط: <span id="scoreDisplay">0</span>
+            </div>
+            <button onclick="toggleMute()" class="w-10 h-10 bg-slate-200 text-slate-600 rounded-full flex items-center justify-center hover:bg-slate-300 transition-colors shadow-md">
+                <i id="muteIcon" class="fas fa-volume-up"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-grow flex flex-col items-center justify-center p-4 z-10 relative">
+        
+        <!-- Character (Using the provided image as base64 or placeholder. Since we can't easily upload, we'll use a stylized container referencing the boy) -->
+        <div id="characterContainer" class="absolute -bottom-10 left-10 hidden md:block w-48 h-48 z-20">
+            <!-- Simulated cartoon boy based on description, normally we'd use an img src here -->
+            <div class="relative w-full h-full">
+                <!-- Using a cute SVG icon as fallback if image isn't loaded -->
+                <svg viewBox="0 0 100 100" class="w-full h-full character-img" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="50" cy="50" r="45" fill="#fde68a" stroke="#d97706" stroke-width="2"/>
+                    <!-- Hair -->
+                    <path d="M 20 40 Q 50 10 80 40 Q 50 20 20 40" fill="#451a03"/>
+                    <!-- Eyes -->
+                    <circle cx="35" cy="45" r="5" fill="#1e293b"/>
+                    <circle cx="65" cy="45" r="5" fill="#1e293b"/>
+                    <!-- Smile -->
+                    <path d="M 30 65 Q 50 85 70 65" fill="none" stroke="#b45309" stroke-width="3" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <div id="characterSpeech" class="absolute -top-16 -right-32 bg-white p-3 rounded-2xl rounded-bl-none shadow-lg border-2 border-primary w-48 text-sm font-bold opacity-0 transition-opacity duration-300">
+                مرحباً يا صديقي!
+            </div>
+        </div>
+
+        <!-- Screens -->
+        
+        <!-- 1. Start Screen -->
+        <div id="startScreen" class="glass-panel p-8 max-w-lg w-full text-center flex flex-col gap-6 transform transition-all duration-500 scale-100">
+            <h2 class="font-cartoon text-4xl text-secondary font-bold">أهلاً بك في رحلة اكتشاف الفيروسات!</h2>
+            <img src="https://placehold.co/400x200/bae6fd/1e3a8a?text=Virus+Adventure" alt="Banner" class="rounded-xl mx-auto shadow-md border-4 border-white object-cover hidden">
+            
+            <p class="text-lg text-slate-600 font-medium">هل أنت مستعد لاختبار معلوماتك حول الفيروسات وأنواعها؟ أجب عن 20 سؤالاً لتربح!</p>
+            
+            <button onclick="startGame()" class="btn-cartoon bg-primary hover:bg-green-500 text-white text-2xl font-cartoon py-4 px-8 rounded-full w-full mx-auto shadow-lg border-4 border-green-600 mt-4">
+                ابدأ اللعب الآن! <i class="fas fa-play ml-2"></i>
+            </button>
+        </div>
+
+        <!-- 2. Game Screen -->
+        <div id="gameScreen" class="glass-panel p-6 max-w-2xl w-full hidden flex-col gap-6">
+            
+            <div class="flex justify-between items-center border-b-2 border-slate-100 pb-4">
+                <div class="font-bold text-lg text-secondary">
+                    سؤال <span id="currentQuestionNum">1</span> / 20
+                </div>
+                <div class="w-1/2 bg-slate-200 h-4 rounded-full overflow-hidden">
+                    <div id="progressBar" class="bg-primary h-full rounded-full transition-all duration-300 w-0"></div>
+                </div>
+            </div>
+
+            <!-- Question Container -->
+            <div id="questionContainer" class="min-h-[200px] flex flex-col gap-4">
+                <!-- Content injected via JS -->
+            </div>
+
+            <!-- Feedback Area inside Game Screen (for correct/wrong before next) -->
+            <div id="inlineFeedback" class="hidden rounded-xl p-4 font-bold text-center border-2 transition-all"></div>
+
+            <button id="nextBtn" onclick="nextQuestion()" class="btn-cartoon bg-secondary hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl hidden self-end shadow-md border-b-4 border-blue-700">
+                السؤال التالي <i class="fas fa-arrow-left mr-2"></i>
+            </button>
+        </div>
+
+        <!-- 3. End Screen -->
+        <div id="endScreen" class="glass-panel p-8 max-w-2xl w-full text-center hidden flex-col gap-6">
+            <h2 class="font-cartoon text-4xl text-primary font-bold">أحسنت يا بطل!</h2>
+            
+            <div class="bg-yellow-50 p-6 rounded-2xl border-4 border-accent flex flex-col items-center">
+                <i class="fas fa-trophy text-6xl text-accent mb-4"></i>
+                <p class="text-2xl font-bold">نقاطك النهائية: <span id="finalScore" class="text-secondary text-4xl">0</span></p>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl border-2 border-slate-200 text-right">
+                <h3 class="font-bold text-xl text-secondary mb-3"><i class="fas fa-book-open ml-2"></i> قصة الفيروسات (ملخص الدرس):</h3>
+                <p class="text-slate-700 leading-relaxed text-sm">
+                    الفيروسات هي جسيمات دقيقة جداً غير حية تتكون من <strong class="text-primary">مادة وراثية محاطة بغلاف بروتيني (المحفظة)</strong>. 
+                    هي تقف على "عتبة الحياة" لأنها لا تستطيع القيام بوظائف الحياة كالنمو أو التكاثر من تلقاء نفسها، بل تحتاج الدخول لجسم كائن حي. 
+                    هناك أنواع متخصصة منها: <strong class="text-secondary">فيروس يصيب الإنسان والحيوان (كفيروس الإنفلونزا وكورونا)</strong>، و <strong class="text-accent">فيروس آكل البكتيريا</strong>، و <strong class="text-green-600">فيروس يصيب النبات (كتبقع نبات الخيار)</strong>. 
+                    تنتقل الفيروسات بطرق عدة مثل: <strong class="text-danger">رذاذ العطس، اللسع، أو عضة الكلب</strong>. 
+                    ورغم أن معظمنا يعرفها كمسببة للأمراض، إلا أن بعضها <strong class="text-primary">مفيد</strong> ويستخدمه العلماء كجنود لمحاربة البكتيريا الضارة بدلاً من المضادات!
+                </p>
+            </div>
+            
+            <button onclick="location.reload()" class="btn-cartoon bg-secondary hover:bg-blue-500 text-white font-bold py-3 px-8 rounded-xl w-fit mx-auto mt-4 shadow-md border-b-4 border-blue-700">
+                العب مرة أخرى <i class="fas fa-redo ml-2"></i>
+            </button>
+        </div>
+
+    </main>
+
+    <!-- Background decorative elements -->
+    <div class="fixed top-20 right-10 opacity-20 animate-bounce-slow pointer-events-none text-primary z-0">
+        <i class="fas fa-virus text-6xl"></i>
+    </div>
+    <div class="fixed bottom-40 left-20 opacity-20 animate-pulse-fast pointer-events-none text-secondary z-0">
+        <i class="fas fa-bacteria text-4xl"></i>
+    </div>
+    <div class="fixed top-1/2 right-32 opacity-20 pointer-events-none text-accent z-0" style="animation: float 5s ease-in-out infinite;">
+        <i class="fas fa-dna text-5xl"></i>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // Game Data based on the provided images
+        const questions = [
+            // Multiple Choice
+            {
+                type: 'mcq',
+                text: 'مما تتكون الفيروسات بشكل أساسي؟',
+                options: ['مادة وراثية وغلاف بروتيني', 'خلايا حية ونواة', 'ماء وأملاح فقط', 'دم وعظام'],
+                correct: 0,
+                explanation: 'الفيروسات تتكون من مادة وراثية محاطة بغلاف بروتيني (محفظة).'
+            },
+            {
+                type: 'mcq',
+                text: 'أي مما يلي يعتبر من خصائص الفيروسات؟',
+                options: ['تستطيع التكاثر بنفسها', 'ترى بالعين المجردة', 'جسيمات دقيقة جداً غير حية', 'تتكون من خلايا نباتية'],
+                correct: 2,
+                explanation: 'الفيروسات جسيمات دقيقة جداً غير حية وليست خلايا حية.'
+            },
+            {
+                type: 'mcq',
+                text: 'ماذا يسمى الغلاف البروتيني الذي يحيط بالفيروس؟',
+                options: ['النواة', 'الجدار الخلوي', 'المحفظة', 'الذيل'],
+                correct: 2,
+                explanation: 'الغلاف البروتيني يسمى (المحفظة).'
+            },
+            {
+                type: 'mcq',
+                text: 'ما الجهاز المستخدم لرؤية الفيروسات؟',
+                options: ['العين المجردة', 'المجهر العادي', 'التلسكوب', 'المجهر الإلكتروني'],
+                correct: 3,
+                explanation: 'نظراً لصغر حجمها، لا يمكن رؤيتها إلا بالمجهر الإلكتروني.'
+            },
+            {
+                type: 'mcq',
+                text: 'فيروس تبرقش نبات الخيار يصيب:',
+                options: ['الإنسان', 'البكتيريا', 'النباتات', 'الحيوانات'],
+                correct: 2,
+                explanation: 'كما هو موضح من اسمه، هو فيروس متخصص بإصابة النباتات.'
+            },
+            // True/False
+            {
+                type: 'tf',
+                text: 'تعتبر الفيروسات كائنات حية لأنها تنمو وتتكاثر من تلقاء نفسها.',
+                correct: false,
+                explanation: 'خطأ. الفيروسات تقف على "عتبة الحياة" ولا تتكاثر إلا داخل جسم كائن حي.'
+            },
+            {
+                type: 'tf',
+                text: 'فيروس الإنفلونزا يسبب مرض الرشح للإنسان.',
+                correct: true,
+                explanation: 'صح. فيروس الإنفلونزا متخصص بإصابة الإنسان والحيوان.'
+            },
+            {
+                type: 'tf',
+                text: 'جميع الفيروسات ضارة وتسبب الأمراض دائماً.',
+                correct: false,
+                explanation: 'خطأ. بعض الفيروسات مفيدة ويستخدمها العلماء لمحاربة البكتيريا الضارة.'
+            },
+            {
+                type: 'tf',
+                text: 'تنتقل الفيروسات عن طريق رذاذ العطس فقط.',
+                correct: false,
+                explanation: 'خطأ. تنتقل بطرق مختلفة كالعطس، اللسع، وعضة الكلب.'
+            },
+            {
+                type: 'tf',
+                text: 'يسمى الفيروس الذي يهاجم البكتيريا بـ "آكل البكتيريا".',
+                correct: true,
+                explanation: 'صح. وهو نوع متخصص من الفيروسات.'
+            },
+            // Fill in the blanks (represented as MCQ for ease of UI, but phrased as fill-in)
+            {
+                type: 'mcq',
+                text: 'أكمل: تعتبر الفيروسات على عتبة الحياة لأنها لا تستطيع القيام بـ ........',
+                options: ['وظائف الحياة', 'الحركة البسيطة', 'النوم', 'تغيير لونها'],
+                correct: 0,
+                explanation: 'لا تستطيع القيام بوظائف الحياة الأساسية كالنمو أو التكاثر.'
+            },
+            {
+                type: 'mcq',
+                text: 'أكمل: لا تستطيع الفيروسات التكاثر من تلقاء نفسها إلا بعد ........ لجسم كائن حي.',
+                options: ['خروجها من', 'دخولها', 'النظر إلى', 'الابتعاد عن'],
+                correct: 1,
+                explanation: 'تحتاج الدخول لجسم كائن حي لتتمكن من التكاثر.'
+            },
+            {
+                type: 'mcq',
+                text: 'اكتب المصطلح: جسيمات دقيقة جداً غير حية تتكون من مادة وراثية محاطة بغلاف بروتيني.',
+                options: ['البكتيريا', 'الفطريات', 'الفيروسات', 'الخلايا'],
+                correct: 2,
+                explanation: 'هذا هو التعريف العلمي للفيروسات.'
+            },
+            // Image matching / identification concepts
+            {
+                type: 'mcq',
+                text: 'في تركيب الفيروس (آكل البكتيريا)، الجزء العلوي المضلع يحتوي على:',
+                options: ['الذيل', 'المادة الوراثية', 'أرجل الحركة', 'الدم'],
+                correct: 1,
+                explanation: 'الجزء العلوي (الرأس/المحفظة) يحتوي بداخله على المادة الوراثية.'
+            },
+            {
+                type: 'mcq',
+                text: 'كيف يمكن لخالد المصاب بالزكام أن يمنع انتقال الفيروسات لأخته عند العطس؟',
+                options: ['لا يفعل شيئاً', 'يعطس في يديه ثم يصافحها', 'يغطي فمه وأنفه بمنديل ويبتعد', 'يصرخ بصوت عالٍ'],
+                correct: 2,
+                explanation: 'تغطية الأنف والفم والابتعاد يمنع انتقال الرذاذ المحمل بالفيروسات.'
+            },
+            {
+                type: 'mcq',
+                text: 'فيروس كورونا جسيم يعتبر:',
+                options: ['مسبب مرض', 'علاج فعال', 'نوع من الطعام', 'حشرة صغيرة'],
+                correct: 0,
+                explanation: 'فيروس كورونا هو مسبب لمرض كورونا.'
+            },
+            {
+                type: 'mcq',
+                text: 'أي من الطرق التالية تمثل انتقال الفيروس عن طريق كائن مصاب؟',
+                options: ['شرب الماء النظيف', 'عضة الكلب', 'غسل اليدين', 'النوم المبكر'],
+                correct: 1,
+                explanation: 'عضة كلب مصاب (كداء الكلب) تنقل الفيروس.'
+            },
+            {
+                type: 'mcq',
+                text: 'تتميز الفيروسات بأنها:',
+                options: ['متشابهة في الشكل', 'تصيب نفس الكائنات', 'متخصصة (كل نوع يصيب كائن معين)', 'حجمها كبير'],
+                correct: 2,
+                explanation: 'الفيروسات متخصصة، ففيروس النبات لا يصيب الإنسان والعكس.'
+            },
+            {
+                type: 'mcq',
+                text: 'هل تشبه الفيروسات الخلية الحيوانية أو النباتية بمكوناتها؟',
+                options: ['نعم، تشبهها تماماً', 'لا، لا تشبهها', 'تشبه الحيوانية فقط', 'تشبه النباتية فقط'],
+                correct: 1,
+                explanation: 'الفيروسات ليست خلايا حية ولا تشبه الخلايا في مكوناتها.'
+            },
+            {
+                type: 'mcq',
+                text: 'ما هو الهدف من استخدام العلماء لبعض أنواع الفيروسات في الطب؟',
+                options: ['لنشر الأمراض', 'لمهاجمة البكتيريا الضارة بدلاً من المضادات', 'لتلوين الدم', 'لا تستخدم أبداً'],
+                correct: 1,
+                explanation: 'تستخدم كـ "جنود صغيرة" لمحاربة الجراثيم والبكتيريا الضارة.'
+            }
+        ];
+
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let shuffledQuestions = [];
+
+        // Utility: Shuffle array
+        function shuffle(array) {
+            let currentIndex = array.length,  randomIndex;
+            while (currentIndex != 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+            return array;
+        }
+
+        async function startGame() {
+            try {
+                if(Tone.context.state !== 'running') await Tone.start();
+                initAudio();
+            } catch(e) { console.log("Audio init failed or requires user interaction first."); }
+
+            playSound('click');
+            
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('gameScreen').classList.remove('hidden');
+            document.getElementById('gameScreen').classList.add('flex');
+            
+            // Prepare questions
+            shuffledQuestions = shuffle([...questions]);
+            currentQuestionIndex = 0;
+            score = 0;
+            updateScoreDisplay();
+            
+            showCharacterMessage("لنبدأ! اقرأ السؤال جيداً.");
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            const q = shuffledQuestions[currentQuestionIndex];
+            const container = document.getElementById('questionContainer');
+            document.getElementById('currentQuestionNum').innerText = currentQuestionIndex + 1;
+            
+            // Update Progress Bar
+            const progress = ((currentQuestionIndex) / questions.length) * 100;
+            document.getElementById('progressBar').style.width = `${progress}%`;
+
+            // Reset UI
+            document.getElementById('inlineFeedback').classList.add('hidden');
+            document.getElementById('nextBtn').classList.add('hidden');
+            container.innerHTML = '';
+            container.classList.remove('opacity-50', 'pointer-events-none');
+
+            // Build Question HTML
+            let html = `<h3 class="text-2xl font-bold text-slate-800 mb-4 leading-relaxed">${q.text}</h3>`;
+            html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">`;
+
+            if (q.type === 'mcq') {
+                q.options.forEach((opt, index) => {
+                    html += `
+                        <button onclick="checkAnswer(${index}, this)" class="option-btn bg-white border-2 border-slate-200 text-slate-700 font-bold py-4 px-6 rounded-xl text-right text-lg shadow-sm hover:shadow-md">
+                            ${opt}
+                        </button>
+                    `;
+                });
+            } else if (q.type === 'tf') {
+                html += `
+                    <button onclick="checkAnswer(true, this)" class="option-btn bg-white border-2 border-slate-200 text-green-700 font-bold py-4 px-6 rounded-xl text-center text-xl shadow-sm hover:shadow-md flex items-center justify-center gap-2">
+                        <i class="fas fa-check-circle text-2xl"></i> صح
+                    </button>
+                    <button onclick="checkAnswer(false, this)" class="option-btn bg-white border-2 border-slate-200 text-red-700 font-bold py-4 px-6 rounded-xl text-center text-xl shadow-sm hover:shadow-md flex items-center justify-center gap-2">
+                        <i class="fas fa-times-circle text-2xl"></i> خطأ
+                    </button>
+                `;
+            }
+
+            html += `</div>`;
+            container.innerHTML = html;
+        }
+
+        function checkAnswer(answer, btnElement) {
+            const q = shuffledQuestions[currentQuestionIndex];
+            const isCorrect = (q.type === 'mcq' && answer === q.correct) || (q.type === 'tf' && answer === q.correct);
+            
+            // Disable container clicks
+            document.getElementById('questionContainer').classList.add('pointer-events-none');
+            
+            const feedbackEl = document.getElementById('inlineFeedback');
+            feedbackEl.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'border-green-400', 'bg-red-100', 'text-red-800', 'border-red-400');
+            
+            if (isCorrect) {
+                playSound('correct');
+                score += 10;
+                updateScoreDisplay();
+                btnElement.classList.add('correct');
+                
+                feedbackEl.innerHTML = `<i class="fas fa-star text-yellow-500 mr-2"></i> إجابة صحيحة! <br><span class="text-sm mt-1 block font-normal">${q.explanation}</span>`;
+                feedbackEl.classList.add('bg-green-100', 'text-green-800', 'border-green-400', 'block');
+                showCharacterMessage("أحسنت! إجابة رائعة.");
+                createConfetti(btnElement);
+            } else {
+                playSound('wrong');
+                btnElement.classList.add('wrong');
+                
+                // Highlight correct answer for MCQ
+                if(q.type === 'mcq') {
+                    const buttons = document.querySelectorAll('.option-btn');
+                    buttons[q.correct].classList.add('correct');
+                }
+
+                feedbackEl.innerHTML = `<i class="fas fa-exclamation-triangle mr-2"></i> إجابة خاطئة. <br><span class="text-sm mt-1 block font-normal">${q.explanation}</span>`;
+                feedbackEl.classList.add('bg-red-100', 'text-red-800', 'border-red-400', 'block');
+                showCharacterMessage("لا بأس، حاول في السؤال القادم.");
+            }
+
+            document.getElementById('nextBtn').classList.remove('hidden');
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('scoreDisplay').innerText = score;
+            // animate score
+            const sd = document.getElementById('scoreDisplay');
+            sd.classList.add('scale-150', 'text-yellow-300');
+            setTimeout(() => sd.classList.remove('scale-150', 'text-yellow-300'), 300);
+        }
+
+        function nextQuestion() {
+            playSound('click');
+            currentQuestionIndex++;
+            
+            if (currentQuestionIndex < questions.length) {
+                loadQuestion();
+            } else {
+                endGame();
+            }
+        }
+
+        function endGame() {
+            document.getElementById('gameScreen').classList.remove('flex');
+            document.getElementById('gameScreen').classList.add('hidden');
+            
+            const endScreen = document.getElementById('endScreen');
+            endScreen.classList.remove('hidden');
+            endScreen.classList.add('flex');
+            
+            document.getElementById('finalScore').innerText = score;
+            document.getElementById('progressBar').style.width = `100%`;
+            
+            if(score > 150) {
+                showCharacterMessage("أنت عبقري علوم! مبروك!");
+            } else {
+                showCharacterMessage("عمل جيد! اقرأ الملخص لتستفيد أكثر.");
+            }
+            
+            // Big confetti
+            setInterval(() => createConfetti(document.body), 1000);
+        }
+
+        function showCharacterMessage(msg) {
+            const speechBubble = document.getElementById('characterSpeech');
+            if(speechBubble) {
+                speechBubble.innerText = msg;
+                speechBubble.classList.remove('opacity-0');
+                speechBubble.classList.add('opacity-100', '-translate-y-2');
+                
+                setTimeout(() => {
+                    speechBubble.classList.remove('opacity-100', '-translate-y-2');
+                    speechBubble.classList.add('opacity-0');
+                }, 3000);
+            }
+        }
+
+        // Simple visual effect for correct answers
+        function createConfetti(element) {
+            const rect = element.getBoundingClientRect();
+            for(let i=0; i<10; i++) {
+                const conf = document.createElement('div');
+                conf.className = 'absolute w-3 h-3 rounded-full pointer-events-none z-50';
+                conf.style.backgroundColor = ['#4ade80', '#fbbf24', '#60a5fa', '#f87171'][Math.floor(Math.random()*4)];
+                conf.style.left = rect.left + rect.width/2 + 'px';
+                conf.style.top = rect.top + rect.height/2 + 'px';
+                
+                const angle = Math.random() * Math.PI * 2;
+                const velocity = 50 + Math.random() * 100;
+                const tx = Math.cos(angle) * velocity;
+                const ty = Math.sin(angle) * velocity - 50; // slight upward bias
+                
+                conf.animate([
+                    { transform: 'translate(0,0) scale(1)', opacity: 1 },
+                    { transform: `translate(${tx}px, ${ty}px) scale(0)`, opacity: 0 }
+                ], {
+                    duration: 800 + Math.random()*500,
+                    easing: 'cubic-bezier(0, .9, .57, 1)'
+                });
+                
+                document.body.appendChild(conf);
+                setTimeout(() => conf.remove(), 1500);
+            }
+        }
+    </script>
+</body>
+</html>
